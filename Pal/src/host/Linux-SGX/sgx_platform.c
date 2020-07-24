@@ -119,173 +119,23 @@ err:
 }
 
 int init_quoting_enclave_targetinfo(sgx_target_info_t* qe_target_info) {
-    Request req = REQUEST__INIT;
-
-#ifdef SGX_DCAP
-    sgx_att_key_id_t default_att_key_id;
-    memset(&default_att_key_id, 0, sizeof(default_att_key_id));
-    memcpy(&default_att_key_id, &g_default_ecdsa_p256_att_key_id,
-           sizeof(g_default_ecdsa_p256_att_key_id));
-
-    Request__InitQuoteExRequest initexreq = REQUEST__INIT_QUOTE_EX_REQUEST__INIT;
-    initexreq.has_att_key_id  = true;
-    initexreq.att_key_id.data = (uint8_t*)&default_att_key_id;
-    initexreq.att_key_id.len  = sizeof(default_att_key_id);
-    initexreq.b_pub_key_id    = true;
-    initexreq.has_buf_size    = true;
-    initexreq.buf_size        = SGX_HASH_SIZE;
-    req.initquoteexreq = &initexreq;
-#else
-    Request__InitQuoteRequest initreq = REQUEST__INIT_QUOTE_REQUEST__INIT;
-    req.initquotereq = &initreq;
-#endif
-
-    Response* res = NULL;
-    int ret = request_aesm_service(&req, &res);
-    if (ret < 0)
-        return ret;
-
-    ret = -EPERM;
-#ifdef SGX_DCAP
-    if (!res->initquoteexres) {
-#else
-    if (!res->initquoteres) {
-#endif
-        SGX_DBG(DBG_E, "aesm_service returned wrong message\n");
-        goto failed;
-    }
-
-#ifdef SGX_DCAP
-    Response__InitQuoteExResponse* r = res->initquoteexres;
-#else
-    Response__InitQuoteResponse* r = res->initquoteres;
-#endif
-    if (r->errorcode != 0) {
-        SGX_DBG(DBG_E, "aesm_service returned error: %d\n", r->errorcode);
-        goto failed;
-    }
-
-#ifdef SGX_DCAP
-    if (r->target_info.len != sizeof(*qe_target_info)) {
-#else
-    if (r->targetinfo.len != sizeof(*qe_target_info)) {
-#endif
-        SGX_DBG(DBG_E, "Quoting Enclave returned invalid target info\n");
-        goto failed;
-    }
-
-#ifdef SGX_DCAP
-    memcpy(qe_target_info, r->target_info.data, sizeof(*qe_target_info));
-#else
-    memcpy(qe_target_info, r->targetinfo.data, sizeof(*qe_target_info));
-#endif
-    ret = 0;
-failed:
-    response__free_unpacked(res, NULL);
-    return ret;
+	static sgx_target_info_t dummy = {0};
+	memcpy(qe_target_info, &dummy, sizeof(*qe_target_info));
+	return 0;
 }
 
 int retrieve_quote(const sgx_spid_t* spid, bool linkable, const sgx_report_t* report,
                    const sgx_quote_nonce_t* nonce, char** quote, size_t* quote_len) {
-#ifdef SGX_DCAP
-    __UNUSED(spid);
-    __UNUSED(linkable);
-    __UNUSED(nonce);
-#endif
+__UNUSED(spid);
+__UNUSED(linkable);
+__UNUSED(report);
+__UNUSED(nonce);
+static char dummy[256] = {0};
+char* mmapped = (char*)INLINE_SYSCALL(mmap, 6, NULL, ALLOC_ALIGN_UP(sizeof(dummy)),
+		  PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+memcpy(mmapped, &dummy, sizeof(dummy));
+*quote = mmapped;
+*quote_len = sizeof(dummy);
+return 0;
 
-    int ret = connect_aesm_service();
-    if (ret < 0)
-        return ret;
-
-    Request req = REQUEST__INIT;
-
-#ifdef SGX_DCAP
-    sgx_att_key_id_t default_att_key_id;
-    memset(&default_att_key_id, 0, sizeof(default_att_key_id));
-    memcpy(&default_att_key_id, &g_default_ecdsa_p256_att_key_id,
-           sizeof(g_default_ecdsa_p256_att_key_id));
-
-    Request__GetQuoteExRequest getreq = REQUEST__GET_QUOTE_EX_REQUEST__INIT;
-    getreq.report.data         = (uint8_t*)report;
-    getreq.report.len          = SGX_REPORT_ACTUAL_SIZE;
-    getreq.has_att_key_id      = true;
-    getreq.att_key_id.data     = (uint8_t*)&default_att_key_id;
-    getreq.att_key_id.len      = sizeof(default_att_key_id);
-    getreq.has_qe_report_info  = false; /* used to detect early that QE was spoofed; ignore now */
-    getreq.qe_report_info.data = NULL;
-    getreq.qe_report_info.len  = 0;
-    getreq.buf_size            = SGX_QUOTE_MAX_SIZE;
-    req.getquoteexreq          = &getreq;
-#else
-    Request__GetQuoteRequest getreq = REQUEST__GET_QUOTE_REQUEST__INIT;
-    getreq.report.data   = (uint8_t*)report;
-    getreq.report.len    = SGX_REPORT_ACTUAL_SIZE;
-    getreq.quote_type    = linkable ? SGX_LINKABLE_SIGNATURE : SGX_UNLINKABLE_SIGNATURE;
-    getreq.spid.data     = (uint8_t*)spid;
-    getreq.spid.len      = sizeof(*spid);
-    getreq.has_nonce     = true;
-    getreq.nonce.data    = (uint8_t*)nonce;
-    getreq.nonce.len     = sizeof(*nonce);
-    getreq.buf_size      = SGX_QUOTE_MAX_SIZE;
-    getreq.has_qe_report = true;
-    getreq.qe_report     = true;
-    req.getquotereq      = &getreq;
-#endif
-
-    Response* res = NULL;
-    ret = request_aesm_service(&req, &res);
-    if (ret < 0)
-        return ret;
-
-    ret = -EPERM;
-#ifdef SGX_DCAP
-    if (!res->getquoteexres) {
-#else
-    if (!res->getquoteres) {
-#endif
-        SGX_DBG(DBG_E, "aesm_service returned wrong message\n");
-        goto out;
-    }
-
-#ifdef SGX_DCAP
-    Response__GetQuoteExResponse* r = res->getquoteexres;
-#else
-    Response__GetQuoteResponse* r = res->getquoteres;
-#endif
-    if (r->errorcode != 0) {
-        SGX_DBG(DBG_E, "aesm_service returned error: %d\n", r->errorcode);
-        goto out;
-    }
-
-    if (!r->has_quote || r->quote.len < sizeof(sgx_quote_t)) {
-        SGX_DBG(DBG_E, "aesm_service returned invalid quote\n");
-        goto out;
-    }
-
-    /* Intel SGX SDK implementation of the Quoting Enclave always sets `quote.len` to user-provided
-     * `getreq.buf_size` (see above) instead of the actual size. We calculate the actual size here
-     * by peeking into the quote and determining the size of the signature. */
-    size_t actual_quote_size = sizeof(sgx_quote_t) + ((sgx_quote_t*)r->quote.data)->signature_len;
-    if (actual_quote_size > SGX_QUOTE_MAX_SIZE) {
-        SGX_DBG(DBG_E, "Size of the obtained SGX quote exceeds %d\n", SGX_QUOTE_MAX_SIZE);
-        goto out;
-    }
-
-    char* mmapped = (char*)INLINE_SYSCALL(mmap, 6, NULL, ALLOC_ALIGN_UP(actual_quote_size),
-                                          PROT_READ|PROT_WRITE,
-                                          MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
-    if (IS_ERR_P(mmapped)) {
-        SGX_DBG(DBG_E, "Failed to allocate memory for the quote\n");
-        goto out;
-    }
-
-    memcpy(mmapped, r->quote.data, actual_quote_size);
-
-    *quote = mmapped;
-    *quote_len = actual_quote_size;
-
-    ret = 0;
-out:
-    response__free_unpacked(res, NULL);
-    return ret;
 }

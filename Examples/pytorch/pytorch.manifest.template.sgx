@@ -73,7 +73,7 @@ sgx.enclave_size = 4G
 # the application can create is (sgx.thread_num - 2).
 #
 # We (somewhat arbitrarily) specify 16 threads for this workload.
-sgx.thread_num = 16
+sgx.thread_num = 64
 
 # SGX trusted libraries
 
@@ -126,7 +126,7 @@ sgx.trusted_files.image   = file:input.jpg
 
 # File containing the pre-trained model
 # Uncomment lines below if you want to use torchvision.model.alexnet(pretrained=True)
-sgx.trusted_files.torch   = file:$(HOME)/.cache/torch/checkpoints/alexnet-owt-4df8aa71.pth
+sgx.trusted_files.torch   = file:$(HOME)/.cache/torch/checkpoints/inception_v3_google-1a9a5a14.pth
 
 # Pre-trained model saved as a file
 # sgx.trusted_files.model   = file:alexnet-pretrained.pt
