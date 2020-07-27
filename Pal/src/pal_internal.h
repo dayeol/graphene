@@ -109,14 +109,14 @@ struct handle_ops {
     int (*rename) (PAL_HANDLE handle, const char * type, const char * uri);
 };
 
-extern const struct handle_ops * pal_handle_ops [];
+extern const struct handle_ops* g_pal_handle_ops[];
 
-static inline const struct handle_ops * HANDLE_OPS (PAL_HANDLE handle)
+static inline const struct handle_ops* HANDLE_OPS(PAL_HANDLE handle)
 {
     int _type = PAL_GET_TYPE(handle);
     if (_type < 0 || _type >= PAL_HANDLE_TYPE_BOUND)
         return NULL;
-    return pal_handle_ops[_type];
+    return g_pal_handle_ops[_type];
 }
 
 /* We allow dynamic size handle allocation. Here is some macro to help
@@ -169,7 +169,7 @@ extern struct pal_internal_state {
 
     PAL_HANDLE      console;
 
-    unsigned long   start_time;
+    uint64_t        start_time;
 } g_pal_state;
 
 extern PAL_CONTROL g_pal_control;
@@ -236,7 +236,7 @@ int _DkReceiveHandle(PAL_HANDLE hdl, PAL_HANDLE * cargo);
 int _DkThreadCreate (PAL_HANDLE * handle, int (*callback) (void *),
                      const void * param);
 noreturn void _DkThreadExit(int* clear_child_tid);
-int _DkThreadDelayExecution (unsigned long * duration);
+int _DkThreadDelayExecution(uint64_t* duration_us);
 void _DkThreadYieldExecution (void);
 int _DkThreadResume (PAL_HANDLE threadHandle);
 int _DkProcessCreate (PAL_HANDLE * handle, const char * uri,
