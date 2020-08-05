@@ -7,7 +7,7 @@ import torch
 
 # Load the model from a file
 alexnet = torch.load("pretrained.pt")
-# alexnet = models.inception_v3(pretrained=True)
+#alexnet = models.vgg19(pretrained=True)
 # Prepare a transform to get the input image into a format (e.g., x,y dimensions) the classifier
 # expects.
 from torchvision import transforms
@@ -34,7 +34,7 @@ batch_t = torch.unsqueeze(img_t, 0)
 
 alexnet.eval()
 sample = []
-for i in range (0,200):
+for i in range (0,10):
     start = timer()
 # Prepare the model and run the classifier.
     out = alexnet(batch_t)
