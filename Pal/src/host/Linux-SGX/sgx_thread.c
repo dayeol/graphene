@@ -18,16 +18,19 @@ struct thread_map {
     sgx_arch_tcs_t * tcs;
 };
 
-static sgx_arch_tcs_t * enclave_tcs;
-static int enclave_thread_num;
-static struct thread_map * enclave_thread_map;
+static sgx_arch_tcs_t* g_enclave_tcs;
+static int g_enclave_thread_num;
+static struct thread_map* g_enclave_thread_map;
 
 bool g_sgx_enable_stats = false;
 
+/* this function is called only on thread/process exit (never in the middle of thread exec) */
 void update_and_print_stats(bool process_wide) {
-    static atomic_ulong g_eenter_cnt = 0;
-    static atomic_ulong g_eexit_cnt  = 0;
-    static atomic_ulong g_aex_cnt    = 0;
+    static atomic_ulong g_eenter_cnt       = 0;
+    static atomic_ulong g_eexit_cnt        = 0;
+    static atomic_ulong g_aex_cnt          = 0;
+    static atomic_ulong g_sync_signal_cnt  = 0;
+    static atomic_ulong g_async_signal_cnt = 0;
 
     if (!g_sgx_enable_stats)
         return;
@@ -37,24 +40,32 @@ void update_and_print_stats(bool process_wide) {
     int tid = INLINE_SYSCALL(gettid, 0);
     assert(tid > 0);
     pal_printf("----- SGX stats for thread %d -----\n"
-               "  # of EENTERs: %lu\n"
-               "  # of EEXITs:  %lu\n"
-               "  # of AEXs:    %lu\n",
-               tid, tcb->eenter_cnt, tcb->eexit_cnt, tcb->aex_cnt);
+               "  # of EENTERs:        %lu\n"
+               "  # of EEXITs:         %lu\n"
+               "  # of AEXs:           %lu\n"
+               "  # of sync signals:   %lu\n"
+               "  # of async signals:  %lu\n",
+               tid, tcb->eenter_cnt, tcb->eexit_cnt, tcb->aex_cnt,
+               tcb->sync_signal_cnt, tcb->async_signal_cnt);
 
-    g_eenter_cnt += tcb->eenter_cnt;
-    g_eexit_cnt  += tcb->eexit_cnt;
-    g_aex_cnt    += tcb->aex_cnt;
+    g_eenter_cnt       += tcb->eenter_cnt;
+    g_eexit_cnt        += tcb->eexit_cnt;
+    g_aex_cnt          += tcb->aex_cnt;
+    g_sync_signal_cnt  += tcb->sync_signal_cnt;
+    g_async_signal_cnt += tcb->async_signal_cnt;
 
     if (process_wide) {
         int pid = INLINE_SYSCALL(getpid, 0);
         assert(pid > 0);
 
         pal_printf("----- Total SGX stats for process %d -----\n"
-                   "  # of EENTERs: %lu\n"
-                   "  # of EEXITs:  %lu\n"
-                   "  # of AEXs:    %lu\n",
-                   pid, g_eenter_cnt, g_eexit_cnt, g_aex_cnt);
+                   "  # of EENTERs:        %lu\n"
+                   "  # of EEXITs:         %lu\n"
+                   "  # of AEXs:           %lu\n"
+                   "  # of sync signals:   %lu\n"
+                   "  # of async signals:  %lu\n",
+                   pid, g_eenter_cnt, g_eexit_cnt, g_aex_cnt,
+                   g_sync_signal_cnt, g_async_signal_cnt);
     }
 }
 
@@ -64,9 +75,11 @@ void pal_tcb_urts_init(PAL_TCB_URTS* tcb, void* stack, void* alt_stack) {
     tcb->stack = stack;
     tcb->alt_stack = alt_stack;
 
-    tcb->eenter_cnt = 0;
-    tcb->eexit_cnt  = 0;
-    tcb->aex_cnt    = 0;
+    tcb->eenter_cnt       = 0;
+    tcb->eexit_cnt        = 0;
+    tcb->aex_cnt          = 0;
+    tcb->sync_signal_cnt  = 0;
+    tcb->async_signal_cnt = 0;
 }
 
 static spinlock_t tcs_lock = INIT_SPINLOCK_UNLOCKED;
@@ -75,25 +88,25 @@ void create_tcs_mapper (void * tcs_base, unsigned int thread_num)
 {
     size_t thread_map_size = ALIGN_UP_POW2(sizeof(struct thread_map) * thread_num, PRESET_PAGESIZE);
 
-    enclave_tcs = tcs_base;
-    enclave_thread_num = thread_num;
-    enclave_thread_map = (struct thread_map*)INLINE_SYSCALL(mmap, 6, NULL, thread_map_size,
-                                                            PROT_READ | PROT_WRITE,
-                                                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    g_enclave_tcs = tcs_base;
+    g_enclave_thread_num = thread_num;
+    g_enclave_thread_map = (struct thread_map*)INLINE_SYSCALL(mmap, 6, NULL, thread_map_size,
+                                                              PROT_READ | PROT_WRITE,
+                                                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     for (uint32_t i = 0 ; i < thread_num ; i++) {
-        enclave_thread_map[i].tid = 0;
-        enclave_thread_map[i].tcs = &enclave_tcs[i];
+        g_enclave_thread_map[i].tid = 0;
+        g_enclave_thread_map[i].tcs = &g_enclave_tcs[i];
     }
 }
 
 void map_tcs(unsigned int tid) {
     spinlock_lock(&tcs_lock);
-    for (int i = 0 ; i < enclave_thread_num ; i++)
-        if (!enclave_thread_map[i].tid) {
-            enclave_thread_map[i].tid = tid;
-            get_tcb_urts()->tcs = enclave_thread_map[i].tcs;
-            ((struct enclave_dbginfo *) DBGINFO_ADDR)->thread_tids[i] = tid;
+    for (int i = 0 ; i < g_enclave_thread_num ; i++)
+        if (!g_enclave_thread_map[i].tid) {
+            g_enclave_thread_map[i].tid = tid;
+            get_tcb_urts()->tcs = g_enclave_thread_map[i].tcs;
+            ((struct enclave_dbginfo*)DBGINFO_ADDR)->thread_tids[i] = tid;
             break;
         }
     spinlock_unlock(&tcs_lock);
@@ -102,10 +115,10 @@ void map_tcs(unsigned int tid) {
 void unmap_tcs(void) {
     spinlock_lock(&tcs_lock);
 
-    int index = get_tcb_urts()->tcs - enclave_tcs;
-    struct thread_map * map = &enclave_thread_map[index];
+    int index = get_tcb_urts()->tcs - g_enclave_tcs;
+    struct thread_map* map = &g_enclave_thread_map[index];
 
-    assert(index < enclave_thread_num);
+    assert(index < g_enclave_thread_num);
 
     get_tcb_urts()->tcs = NULL;
     ((struct enclave_dbginfo *) DBGINFO_ADDR)->thread_tids[index] = 0;
@@ -116,8 +129,8 @@ void unmap_tcs(void) {
 int current_enclave_thread_cnt(void) {
     int ret = 0;
     spinlock_lock(&tcs_lock);
-    for (int i = 0; i < enclave_thread_num; i++)
-        if (enclave_thread_map[i].tid)
+    for (int i = 0; i < g_enclave_thread_num; i++)
+        if (g_enclave_thread_map[i].tid)
             ret++;
     spinlock_unlock(&tcs_lock);
     return ret;
@@ -161,7 +174,7 @@ int pal_thread_init(void* tcbptr) {
         SGX_DBG(DBG_E,
                 "There are no available TCS pages left for a new thread!\n"
                 "Please try to increase sgx.thread_num in the manifest.\n"
-                "The current value is %d\n", enclave_thread_num);
+                "The current value is %d\n", g_enclave_thread_num);
         ret = -ENOMEM;
         goto out;
     }
@@ -268,12 +281,12 @@ int clone_thread(void) {
 
 int interrupt_thread (void * tcs)
 {
-    int index = (sgx_arch_tcs_t *) tcs - enclave_tcs;
-    struct thread_map * map = &enclave_thread_map[index];
-    if (index >= enclave_thread_num)
+    int index = (sgx_arch_tcs_t*)tcs - g_enclave_tcs;
+    struct thread_map* map = &g_enclave_thread_map[index];
+    if (index >= g_enclave_thread_num)
         return -EINVAL;
     if (!map->tid)
         return -EINVAL;
-    INLINE_SYSCALL(tgkill, 3, pal_enclave.pal_sec.pid, map->tid, SIGCONT);
+    INLINE_SYSCALL(tgkill, 3, g_pal_enclave.pal_sec.pid, map->tid, SIGCONT);
     return 0;
 }
