@@ -10,6 +10,7 @@
 loader.exec = file:/usr/bin/python3
 loader.argv0_override = python3
 loader.insecure__use_host_env = 1
+
 # Graphene environment, including the path to the library OS and the debug
 # option (inline/none)
 loader.preload = file:$(GRAPHENEDIR)/Runtime/libsysdb.so
@@ -18,9 +19,23 @@ loader.debug_type = $(GRAPHENEDEBUG)
 # Read application arguments directly from the command line. Don't use this on production!
 loader.insecure__use_cmdline_argv = 1
 
-# Propagate environment variables from the host. Don't use this on production!
-loader.insecure__use_host_env = 1
-loader.env.LD_LIBRARY_PATH = /lib:/usr/lib:$(ARCH_LIBDIR):/usr/$(ARCH_LIBDIR)
+# Environment variables
+loader.env.LD_LIBRARY_PATH = /lib:/usr/lib:$(ARCH_LIBDIR):/usr/$(ARCH_LIBDIR):./
+loader.env.LD_PRELOAD = libsecret_prov_attest.so
+loader.env.SECRET_PROVISION_CONSTRUCTOR = 1
+loader.env.SECRET_PROVISION_SET_PF_KEY = 1
+loader.env.SECRET_PROVISION_CA_CHAIN_PATH = "certs/test-ca-sha256.crt"
+loader.env.SECRET_PROVISION_SERVERS = "localhost:4433"
+sgx.trusted_files.libnssdns = file:$(GRAPHENEDIR)/Runtime/libnss_dns.so.2
+sgx.trusted_files.libnssmyhostname = file:$(ARCH_LIBDIR)/libnss_myhostname.so.2
+sgx.trusted_files.libnssmdns = file:$(ARCH_LIBDIR)/libnss_mdns4_minimal.so.2
+sgx.trusted_files.libsecretprovattest = file:libsecret_prov_attest.so
+sgx.trusted_files.cachain = file:certs/test-ca-sha256.crt
+sgx.remote_attestation = 1
+sgx.allowed_files.hostconf = file:/etc/host.conf
+sgx.allowed_files.hosts = file:/etc/hosts
+sgx.allowed_files.gaiconf = file:/etc/gai.conf
+sgx.allowed_files.resolv = file:/etc/resolv.conf
 
 # Default glibc files, mounted from the Runtime directory in GRAPHENEDIR
 fs.mount.lib.type = chroot
@@ -48,9 +63,9 @@ fs.mount.tmp.uri = file:/tmp
 
 # PyTorch loads its pre-trained models from here
 # Uncomment lines below if you want to use torchvision.model.alexnet(pretrained=True)
-fs.mount.torch.type = chroot
-fs.mount.torch.path = $(HOME)/.cache/torch
-fs.mount.torch.uri = file:$(HOME)/.cache/torch
+# fs.mount.torch.type = chroot
+# fs.mount.torch.path = $(HOME)/.cache/torch
+# fs.mount.torch.uri = file:$(HOME)/.cache/torch
 
 # When run as `pip install --user ...`, pip installs Python packages here
 fs.mount.pip.type = chroot
@@ -64,7 +79,7 @@ fs.mount.pip.uri  = file:$(HOME)/.local/lib
 # than the enclave size, Graphene will not be able to allocate it.
 #
 # In particular, libtorch*.so is more than 1G, thus 4G is the minimum to make this run.
-sgx.enclave_size = 4G
+sgx.enclave_size = 8G
 
 # Set the maximum number of enclave threads. For SGX v1, the number of enclave
 # TCSes must be specified during signing, so the application cannot use more
@@ -120,18 +135,19 @@ sgx.trusted_files.script  = file:pytorchexample.py
 # Ubuntu18.04 sgx.trusted_files.libffi = file:/usr/$(ARCH_LIBDIR)/libffi.so.6
 
 # File containing the classes, i.e., things the classifier has been trained to distinguish between
-sgx.trusted_files.classes = file:classes.txt
+sgx.protected_files.classes = file:classes.txt
 
 # Input image
-sgx.trusted_files.image   = file:input.jpg
+sgx.protected_files.image   = file:input.jpg
 
 # File containing the pre-trained model
 # Uncomment lines below if you want to use torchvision.model.alexnet(pretrained=True)
-sgx.trusted_files.torch   = file:$(HOME)/.cache/torch/checkpoints/alexnet-owt-4df8aa71.pth
+#sgx.trusted_files.torch   = file:$(HOME)/.cache/torch/checkpoints/alexnet-owt-4df8aa71.pth
 
 # Pre-trained model saved as a file
-# sgx.trusted_files.model   = file:alexnet-pretrained.pt
+sgx.protected_files.model   = file:pretrained.pt
 
+sgx.protected_files.result = file:result.txt
 # Scratch space
 sgx.allowed_files.tmp     = file:/tmp
 

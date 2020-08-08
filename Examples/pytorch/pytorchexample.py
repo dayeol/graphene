@@ -7,7 +7,7 @@ import torch
 
 # Load the model from a file
 alexnet = torch.load("pretrained.pt")
-#alexnet = models.vgg19(pretrained=True)
+#alexnet = models.squeezenet1_0(pretrained=True)
 # Prepare a transform to get the input image into a format (e.g., x,y dimensions) the classifier
 # expects.
 from torchvision import transforms
@@ -22,8 +22,8 @@ transform = transforms.Compose([
 
 # Load the image.
 from PIL import Image
-img = Image.open("input.jpg")
 torch.set_num_threads(8)
+img = Image.open("input.jpg")
 
 # Apply the transform to the image.
 img_t = transform(img)
@@ -32,10 +32,24 @@ img_t = transform(img)
 batch_t = torch.unsqueeze(img_t, 0)
 
 
+
 alexnet.eval()
+
+for i in range (0,3):
+    out = alexnet(batch_t)
+
 sample = []
-for i in range (0,10):
+for i in range (0,1000):
     start = timer()
+    img = Image.open("input.jpg")
+
+    # Apply the transform to the image.
+    img_t = transform(img)
+
+    # Magic (not sure what this does).
+    batch_t = torch.unsqueeze(img_t, 0)
+
+
 # Prepare the model and run the classifier.
     out = alexnet(batch_t)
     end = timer()
